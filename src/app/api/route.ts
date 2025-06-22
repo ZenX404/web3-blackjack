@@ -8,6 +8,7 @@ import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, PutCommand, GetCommand } from "@aws-sdk/lib-dynamodb";
 // 引入viem框架（这个也是wagmi公司开发的）的verifyMessage函数，用于验证签名
 import { verifyMessage } from "viem";
+import jwt from "jsonwebtoken";
 
 // 初始化 DynamoDB 客户端
 const client = new DynamoDBClient({
@@ -71,7 +72,6 @@ async function readScore(player: string): Promise<number | null> {
 
 import { decl } from "postcss";
 
-const DEFAULT_PLAYER = "player";
 
 /**
  * 
@@ -128,7 +128,16 @@ function getRandomCards(deck: Card[], count: number) {
 }
 
 // 固定写法，GET函数用于处理GET请求，函数名要大写
-export async function GET() {
+export async function GET(request: Request) {
+    // 获取请求参数
+    const url = new URL(request.url);
+    const address = url.searchParams.get("address");
+
+    if (!address) {
+        return new Response(JSON.stringify({ message: "No address provided" }), {status: 400});
+    }
+
+
     // 这个函数只有刚开始游戏或者重置游戏的时候才会被调用
     // 所以这里每次都要重置这些数据
     gameState.playerHand = [];
@@ -146,7 +155,7 @@ export async function GET() {
 
     // 从DynamoDB中读取用户分数
     try {
-        const data = await readScore(DEFAULT_PLAYER);
+        const data = await readScore(address);
         if (!data) {
             gameState.score = 0;
         } else {
@@ -170,7 +179,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
     const body = await request.json();
-    const { action } = body;
+    const { action, address } = body;
 
     // 验证签名,避免恶意用户伪造签名
     if (action === "auth") {
@@ -185,11 +194,35 @@ export async function POST(request: Request) {
         if (!isValid) {
             return new Response(JSON.stringify({ message: "Invalid signature" }), {status: 400});
         } else {
-            return new Response(JSON.stringify({ message: "Valid signature" }), {status: 200});
+            // 使用jwt缓存签名1个小时，一个小时内用户不用重复登陆
+            const token = jwt.sign({address}, process.env.JWT_SECRET || "", {expiresIn: "1h"});
+            return new Response(JSON.stringify(
+                { 
+                    message: "Valid signature",
+                    jsonwebtoken : token
+             }), {status: 200});
         }
-        
-        
     }
+
+    // 验证jwt
+    const token = request.headers.get("Bearer")?.split(" ")[1];
+    if (!token) {
+        return new Response(JSON.stringify({ message: "No token provided" }), {status: 401});
+    }
+    /**
+     * 在使用 JWT 时，通过 jwt.verify 方法验证 JWT 的有效性。jwt.verify 会自动检查 JWT 的过期时间。
+        如果 JWT 已经过期，jwt.verify 会抛出一个错误。
+        自动校验：jwt.verify 方法会自动检查 JWT 的过期时间。如果 JWT 已经过期，它会抛出一个 TokenExpiredError。
+        错误处理：在实际应用中，你可以通过捕获这个错误来处理过期的 JWT。所以下面的代码还应该加一个捕获过期一场的逻辑才算完整。
+     */
+    // 验证jwt并解密jwt  如果jwt超时了，就不会通过下面的判断了
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || "") as {address: string};
+    if (decoded.address.toLowerCase() !== address.toLowerCase()) {
+        // 当初jwt就是用addree + JWT_SECRET加工出来的，所以解密出来的东西中也有地址
+        // 我们就判断揭秘出来的地址和当前用户的地址是否一致。
+        return new Response(JSON.stringify({ message: "Invalid token" }), {status: 401});
+    }
+
 
     // 点击hit按钮，从牌堆中抽取一张牌给玩家
     if (action === "hit") {
@@ -250,7 +283,7 @@ export async function POST(request: Request) {
     // 但是要注意，这样等前面分数加工完最后才写入数据库的写法在安全上是有问题的
     // 要遵循先更新状态，再进行外部交互的原则
     try {
-        await writeScore(DEFAULT_PLAYER, gameState.score);
+        await writeScore(address, gameState.score);
     } catch (error) {
         console.error(`Error writing to DynamoDB: ${error}`);
         return new Response(JSON.stringify({ message: "Failed to write score to DynamoDB" }), {status: 500});
