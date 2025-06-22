@@ -31,7 +31,7 @@ export default function Page() {
   // 初始化游戏  js中箭头函数可以简写为initGame = async() => {}，函数定义和变量定义写法很像，不用写()
   const initGame = async() => {
     // 发送GET请求，获取初始数据
-    const response = await fetch("/api", {method: "GET"});
+    const response = await fetch(`/api?address=${address}`, {method: "GET"});
     // 解析响应的json
     const data = await response.json();
     // 把数据赋值给状态变量
@@ -73,7 +73,17 @@ export default function Page() {
   async function handleHit() {
     const response = await fetch("/api", {
       method: "POST",
-      body: JSON.stringify({action: "hit"}),
+      headers: {
+        Bearer : `Bearer ${localStorage.getItem("jwt") || ""}`
+      },
+      body: 
+        JSON.stringify(
+          {
+            action: "hit",
+            address
+          }
+        ),
+        
     });
     const data = await response.json();
     setPlayerHand(data.playerHand);
@@ -85,7 +95,16 @@ export default function Page() {
   async function handleStand() {
     const response = await fetch("/api", {
       method: "POST",
-      body: JSON.stringify({action: "stand"}),
+      // 添加jwt到请求头
+      headers: {
+        Bearer : `Bearer ${localStorage.getItem("jwt") || ""}`
+      },
+      body: JSON.stringify(
+        {
+          action: "stand",
+          address
+        }
+      ),
     });
     const data = await response.json();
     setPlayerHand(data.playerHand);
@@ -95,7 +114,7 @@ export default function Page() {
   }
 
   async function handleReset() {
-    const response = await fetch("/api", {method: "GET"});
+    const response = await fetch(`/api?address=${address}`, {method: "GET"});
     const data = await response.json();
     setPlayerHand(data.playerHand);
     setDealerHand(data.dealerHand);
@@ -135,6 +154,12 @@ export default function Page() {
     });
 
     if (response.status === 200) {
+      // 获取用户的jwt
+      const {jsonwebtoken} = await response.json();
+      // 把jwt缓存到本地浏览器
+      localStorage.setItem("jwt", jsonwebtoken);
+
+      
       setIsSigned(true);
       // 只要签名校验成功后才能初始化游戏
       initGame();
