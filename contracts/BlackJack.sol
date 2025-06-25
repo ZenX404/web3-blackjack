@@ -70,6 +70,10 @@ contract FunctionsConsumerExample is FunctionsClient, ConfirmedOwner, ERC721URIS
 
     // _slotID和_version用于获得加密信息
     // _sub_id是chainlink functions的订阅id，用于请求对应的functions
+    // 部署完智能合约后，合约的所有者应该先调用这个set函数，来设置这三个变量
+    // 使得这个函数能够让合约获取到之前上传的敏感加密信息（通过_slotID和_version）
+    // 并且使得智能合约知道要向哪个chainlink function发送请求（通过_sub_id）
+    // 所有者掌握这三个变量的值，只需要在部署合约的时候调用一次这个set函数配置一下即可
     function setDonHostSecretConfig(uint8 _slotID, uint64 _version, uint64 _sub_id) public onlyOwner {
         donHostedSecretsSlotID = _slotID;
         donHostedSecretsVersion = _version;
@@ -77,7 +81,7 @@ contract FunctionsConsumerExample is FunctionsClient, ConfirmedOwner, ERC721URIS
     }   
 
     /**
-    * 向Chainlink functions发送请求
+    * 向Chainlink functions发送请求。前端就会通过请求这个函数来发送铸造nft请求
      * @notice Send a simple request
      * @param args List of arguments accessible from within the source code
      */

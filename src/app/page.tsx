@@ -5,6 +5,8 @@ import { useEffect, useState } from "react"
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 // 引入wagmi的useAccount钩子
 import { useAccount, useSignMessage } from "wagmi";
+import { parseAbi, createPublicClient, createWalletClient, custom } from "viem";
+import { avalancheFuji } from "viem/chains";
 
 export default function Page() {
 
@@ -26,6 +28,9 @@ export default function Page() {
   const [isSigned, setIsSigned] = useState(false);
   // 获取签名消息
   const { signMessageAsync } = useSignMessage();
+  // 获取公链客户端和钱包客户端
+  const [publicClient, setPublicClient] = useState<any>(null);
+  const [walletClient, setWalletClient] = useState<any>(null);
 
 
   // 初始化游戏  js中箭头函数可以简写为initGame = async() => {}，函数定义和变量定义写法很像，不用写()
@@ -39,6 +44,53 @@ export default function Page() {
     setDealerHand(data.dealerHand);
     setMessage(data.message);
     setScore(data.score);
+    // 创建公链客户端和钱包客户端
+    // 判断当前浏览器中是否存在钱包插件
+    if (typeof window !== "undefined" && window.ethereum) {
+      const publicClient = createPublicClient({
+        chain: avalancheFuji,
+        transport: custom(window.ethereum) // 通过用户的钱包插件发送请求
+      });
+
+      const walletClient = createWalletClient({
+        chain: avalancheFuji,
+        transport: custom(window.ethereum)
+      });
+
+      setPublicClient(publicClient);
+      setWalletClient(walletClient);
+    } else {
+      console.log("Please install a wallet");
+    }
+  }
+
+
+  async function handleSendTx() {
+    // get the contract address
+    const contractAddress = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS;
+    // get the contract abi
+    const contractAbi = parseAbi([process.env.NEXT_PUBLIC_CONTRACT_ABI || ""]);
+
+    // 模拟合约调用
+    await publicClient.simulateContract({
+      address: contractAddress, // 合约地址
+      abi: contractAbi, // 合约abi
+      functionName:"sendRequest", // 合约函数名   指定要调用合约的哪个函数
+      args: [[address],address], // 合约函数参数
+      account: address, // 合约调用者
+    })
+
+    // 通过用户钱包向合约发送真实的交易请求
+    const txHash = await walletClient.writeContract({
+      to: contractAddress, // 合约地址
+      abi:contractAbi, // 合约abi
+      functionName:"sendRequest", // 合约函数名
+      args: [[address], address], // 合约函数参数
+      account: address, // 合约调用者
+    })
+
+    console.log("txHash", txHash);
+
   }
 
 
@@ -134,7 +186,7 @@ export default function Page() {
      * 公钥我们可以理解为这个账户的地址
      * 私钥是用户自己的，不会公开，可以用私钥来对一些数据进行相关的密码学加密算法形成签名数据
      * 我们可以在不知道用户私钥的情况下，指利用这个账户的公钥来验证这个签名是否是这个用户的私钥加工形成的
-     * 这也就能证明这个签名是这个用户自己加工的，而不是其他人伪造的
+     * 这也就能证明这个签名是这个用户自己加工的，而不是其他人伪造的，所以我们要在前端页面加一个发送签名的步骤，避免恶意用户伪造签名
      */
     const message = `Welcome to Web3 game black jack at ${new Date().toString()}`;
     // 使用wagmi的signMessageAsync函数签名message消息
@@ -185,7 +237,7 @@ export default function Page() {
         `my-4 text-2xl bold
         ${message.includes("win") ? "bg-green-300" : "bg-yellow-300"}`
       }>Score: {score} {message}</h2>
-
+      <button onClick={handleSendTx} className="bg-amber-300 rounded-md p-2">GET NFT</button>
       <div className="mt-4">
         <h2>Dealer's hand</h2>
         <div className="flex flex-row gap-2">
